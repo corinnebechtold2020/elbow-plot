@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>K-Means Elbow Plot Demo</title>
+  <style>
+    body { font-family: sans-serif; }
+    canvas { border: 1px solid #ccc; margin: 10px; }
+    #container { display: flex; flex-direction: row; }
+    #plots { display: flex; flex-direction: column; }
+    #desc { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <div id="desc">
+    <b>K-Means Clustering Demo</b><br>
+    Left: Data and clusters. Right: Elbow plot (click a point to select K).
+  </div>
+  <div id="container">
+    <canvas id="scatter" width="400" height="400"></canvas>
+    <canvas id="elbow" width="400" height="400"></canvas>
+  </div>
+  <script>
+    // --- Utility: Gaussian random ---
+    function randn_bm() {
+      let u = 0, v = 0;
+      while(u === 0) u = Math.random();
+      while(v === 0) v = Math.random();
+      return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    }
+
+    // --- Generate random data (normal distribution) ---
+    function generateData(n=100) {
+      let data = [];
+      for (let i = 0; i < n; i++) {
+        data.push([
+          200 + randn_bm() * 60,
+          200 + randn_bm() * 60
+        ]);
+      }
+      return data;
+    }
+
+    // --- K-means implementation ---
+    function kmeans(data, k, maxIter=100) {
+      // Randomly initialize centroids
+      let centroids = [];
+      for (let i = 0; i < k; i++) {
+        let idx = Math.floor(Math.random() * data.length);
+        centroids.push([...data[idx]]);
+      }
+      let labels = new Array(data.length).fill(0);
+      for (let iter = 0; iter < maxIter; iter++) {
+        // Assign labels
+        for (let i = 0; i < data.length; i++) {
+          let minDist = Infinity, minIdx = 0;
+          for (let j = 0; j < k; j++) {
+            let dx = data[i][0] - centroids[j][0];
+            let dy = data[i][1] - centroids[j][1];
+            let dist = dx*dx + dy*dy;
+            if (dist < minDist) {
+              minDist = dist;
+              minIdx = j;
+            }
+          }
+          labels[i] = minIdx;
+        }
+        // Update centroids
+        let sums = Array.from({length: k}, () => [0,0]);
+        let counts = Array(k).fill(0);
+        for (let i = 0; i < data.length; i++) {
+          let l = labels[i];
+          sums[l][0] += data[i][0];
+          sums[l][1] += data[i][1];
+          counts[l]++;
+        }
+        for (let j = 0; j < k; j++) {
+          if (counts[j] > 0) {
+            centroids[j][0] = sums[j][0] / counts[j];
+            centroids[j][1] = sums[j][1] / counts[j];
+          }
+        }
+      }
+      // Compute inertia
+      let inertia = 0;
+      for (let i = 0; i < data.length; i++) {
+        let c = centroids[labels[i]];
+        let dx = data[i][0] - c[0];
+        let dy = data[i][1] - c[1];
+        inertia += dx*dx + dy*dy;
+      }
+      return {labels, centroids, inertia};
+    }
+
+    // --- Draw scatter plot with clusters ---
+    function drawScatter(ctx, data, labels, centroids, k) {
+      ctx.clearRect(0, 0, 400, 400);
+      let colors = ["#e41a1c","#377eb8","#4daf4a","#984ea3","#ff7f00","#ffff33"];
+      // Draw data points
+      for (let i = 0; i < data.length; i++) {
+        ctx.beginPath();
+        ctx.arc(data[i][0], data[i][1], 5, 0, 2*Math.PI);
+        ctx.fillStyle = labels ? colors[labels[i] % colors.length] : "#888";
+        ctx.globalAlpha = 0.7;
+        ctx.fill();
+      }
+      // Draw centroids
+      if (centroids) {
+        for (let j = 0; j < k; j++) {
+          ctx.beginPath();
+          ctx.arc(centroids[j][0], centroids[j][1], 10, 0, 2*Math.PI);
+          ctx.fillStyle = colors[j % colors.length];
+          ctx.globalAlpha = 1.0;
+          ctx.fill();
+          ctx.strokeStyle = "#000";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1.0;
+    }
+
+    // --- Draw elbow plot ---
+    function drawElbow(ctx, inertias, selectedK) {
+      ctx.clearRect(0, 0, 400, 400);
+      // Axes
+      ctx.strokeStyle = "#000";
+      ctx.beginPath();
+      ctx.moveTo(50, 350); ctx.lineTo(350, 350); // x
+      ctx.moveTo(50, 350); ctx.lineTo(50, 50);   // y
+      ctx.stroke();
+      // Labels
+      ctx.font = "14px sans-serif";
+      ctx.fillText("K", 360, 360);
+      ctx.fillText("Inertia", 10, 60);
+      // Plot points and lines
+      let minInertia = Math.min(...inertias);
+      let maxInertia = Math.max(...inertias);
+      for (let i = 0; i < inertias.length-1; i++) {
+        let x1 = 50 + (i)*(300/5);
+        let y1 = 350 - ((inertias[i]-minInertia)/(maxInertia-minInertia+1e-6))*300;
+        let x2 = 50 + (i+1)*(300/5);
+        let y2 = 350 - ((inertias[i+1]-minInertia)/(maxInertia-minInertia+1e-6))*300;
+        ctx.strokeStyle = "#888";
+        ctx.beginPath();
+        ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+      for (let i = 0; i < inertias.length; i++) {
+        let x = 50 + (i)*(300/5);
+        let y = 350 - ((inertias[i]-minInertia)/(maxInertia-minInertia+1e-6))*300;
+        ctx.beginPath();
+        ctx.arc(x, y, 10, 0, 2*Math.PI);
+        ctx.fillStyle = (selectedK === i+1) ? "#e41a1c" : "#377eb8";
+        ctx.globalAlpha = 0.8;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = "#fff";
+        ctx.font = "12px sans-serif";
+        ctx.fillText((i+1).toString(), x-4, y+4);
+      }
+    }
+
+    // --- Main logic ---
+    let data = generateData(100);
+    let results = [];
+    let inertias = [];
+    for (let k = 1; k <= 6; k++) {
+      let res = kmeans(data, k, 30);
+      results.push(res);
+      inertias.push(res.inertia);
+    }
+    let selectedK = 3;
+
+    // --- Initial draw ---
+    let scatter = document.getElementById('scatter').getContext('2d');
+    let elbow = document.getElementById('elbow').getContext('2d');
+    function redraw() {
+      drawScatter(scatter, data, results[selectedK-1].labels, results[selectedK-1].centroids, selectedK);
+      drawElbow(elbow, inertias, selectedK);
+    }
+    redraw();
+
+    // --- Elbow plot click handler ---
+    document.getElementById('elbow').addEventListener('click', function(e) {
+      let rect = this.getBoundingClientRect();
+      let x = e.clientX - rect.left;
+      let y = e.clientY - rect.top;
+      for (let i = 0; i < 6; i++) {
+        let px = 50 + (i)*(300/5);
+        let py = 350 - ((inertias[i]-Math.min(...inertias))/(Math.max(...inertias)-Math.min(...inertias)+1e-6))*300;
+        if ((x-px)*(x-px)+(y-py)*(y-py) < 100) {
+          selectedK = i+1;
+          redraw();
+          break;
+        }
+      }
+    });
+  </script>
+</body>
+</html>
